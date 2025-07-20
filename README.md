@@ -41,17 +41,15 @@ from bcontrolpy import BControl, AuthenticationError
 
 async def main():
     # Connect to EM300 meter on local network
-    bc = BControl(ip="192.168.1.100", password="your_password")
-    try:
-        info = await bc.login()
-        print("Login successful:", info)
+    async with BControl(ip="192.168.1.100", password="your_password") as bc:
+        try:
+            info = await bc.login()
+            print("Login successful:", info)
 
-        data = await bc.get_data()
-        print("Meter readings:", data)
-    except AuthenticationError:
-        print("Authentication failed: check your credentials")
-    finally:
-        await bc.close()
+            data = await bc.get_data()
+            print("Meter readings:", data)
+        except AuthenticationError:
+            print("Authentication failed: check your credentials")
 
 asyncio.run(main())
 ```
@@ -69,10 +67,9 @@ asyncio.run(main())
 Example:
 
 ```python
-bc = BControl(ip="192.168.1.100", password="your_password")
-info = await bc.login()
-values = await bc.get_data()
-await bc.close()
+async with BControl(ip="192.168.1.100", password="your_password") as bc:
+    info = await bc.login()
+    values = await bc.get_data()
 ```
 
 ### Command Line Example
