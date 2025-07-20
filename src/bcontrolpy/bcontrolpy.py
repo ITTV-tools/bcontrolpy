@@ -145,4 +145,6 @@ class BControl:
         return translate_keys(data, key_mapping)
 
     async def close(self):
-        await self.session.close()
+        """Close the underlying :class:`aiohttp.ClientSession` if owned."""
+        if self._session_owner:
+            await self.session.close()

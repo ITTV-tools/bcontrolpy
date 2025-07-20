@@ -84,7 +84,7 @@ This prints the login details and current meter readings.
 
 ## Configuration
 
-* **Reuse `aiohttp.ClientSession`**: Pass an existing session (e.g., from Home Assistant) to `BControl` to take advantage of connection pooling.
+* **Reuse `aiohttp.ClientSession`**: Pass an existing session (e.g., from Home Assistant) to `BControl` to take advantage of connection pooling. An external session will **not** be closed by `BControl.close()`.
 * **Handle Exceptions**: Catch `AuthenticationError` to trigger re-authentication flows.
 * **Customize Mapping**: The OBIS code mapping resides in `key_mapping.py` and can be extended for additional measurements.
 

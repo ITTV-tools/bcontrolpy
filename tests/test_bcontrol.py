@@ -97,3 +97,13 @@ async def test_missing_cookie(session):
               headers={})
         with pytest.raises(CookieValueError):
             await bc.login()
+
+
+@pytest.mark.asyncio
+async def test_external_session_not_closed(session):
+    """Ensure `BControl.close()` doesn't close externally supplied sessions."""
+    bc = BControl(ip="127.0.0.1", password="secret", session=session)
+
+    # close without performing any network interactions
+    await bc.close()
+    assert not session.closed
