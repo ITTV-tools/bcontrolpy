@@ -5,11 +5,11 @@ import aiohttp
 import json  # Add this import at the top
 
 
-async def main(ip, password):    
+async def main(ip, password):
     async with aiohttp.ClientSession() as session:
-        bc = BControl(ip, password, session=session)
-        login_response = await bc.login()
-        print("Login Response:", login_response)
+        async with BControl(ip, password, session=session) as bc:
+            login_response = await bc.login()
+            print("Login Response:", login_response)
         
         try:
             while True:
@@ -19,8 +19,6 @@ async def main(ip, password):
                 await asyncio.sleep(5)  # Wait for 5 seconds before the next call
         except asyncio.CancelledError:
             print("Task cancelled, closing connection.")
-        finally:
-            await bc.close()
 
 
 def format_data(data):
