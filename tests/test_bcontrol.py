@@ -74,7 +74,7 @@ async def test_get_data_refresh(session):
               payload=sample,
               status=200)
 
-        data = await bc.get_data()
+        data = await bc.async_get_data()
         assert data.get("Active Power+") == 42
         assert bc.logged_in
 

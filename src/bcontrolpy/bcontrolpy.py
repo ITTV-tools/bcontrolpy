@@ -2,28 +2,52 @@ import asyncio
 import aiohttp
 import json
 import logging
+from typing import Optional
 from async_timeout import timeout
 from .key_mapping import key_mapping
 
 _LOGGER = logging.getLogger(__name__)
 
-# Eigene Exceptions
-class CookieRetrievalError(Exception):
+# Library exception hierarchy to support clean Home Assistant error mapping.
+class BControlError(Exception):
+    """Base exception for all library errors."""
+
+
+class BControlCommunicationError(BControlError):
+    """Raised for network and transport errors."""
+
+
+class BControlParseError(BControlCommunicationError):
+    """Raised when API responses cannot be parsed as valid JSON."""
+
+
+class CookieRetrievalError(BControlCommunicationError):
     pass
 
-class LoginValueError(Exception):
+
+class LoginValueError(BControlCommunicationError):
     pass
 
-class CookieValueError(Exception):
+
+class CookieValueError(BControlCommunicationError):
     pass
 
-class AuthenticationError(Exception):
+
+class AuthenticationError(BControlError):
     """Raised when login fails due to invalid credentials."""
     pass
 
-class NotAuthenticatedError(Exception):
+
+class NotAuthenticatedError(BControlError):
     """Raised when trying to get data without authentication."""
     pass
+
+
+def _decode_json(payload: str, context: str) -> dict:
+    try:
+        return json.loads(payload)
+    except json.JSONDecodeError as e:
+        raise BControlParseError(f"Invalid JSON in {context}: {e}")
 
 async def getcookie(session: aiohttp.ClientSession, base_url: str, timeout_seconds: int):
     url = f"{base_url}/start.php"
@@ -65,25 +89,34 @@ async def authenticate(session: aiohttp.ClientSession, base_url: str, login: str
 async def getdata(session: aiohttp.ClientSession, base_url: str, cookie_value: str, timeout_seconds: int):
     url = f"{base_url}/mum-webservice/data.php"
     headers = {'Cookie': f'PHPSESSID={cookie_value}'}
-    async with timeout(timeout_seconds):
-        async with session.get(url, headers=headers) as resp:
-            resp.raise_for_status()
-            return await resp.text()
+    try:
+        async with timeout(timeout_seconds):
+            async with session.get(url, headers=headers) as resp:
+                resp.raise_for_status()
+                return await resp.text()
+    except aiohttp.ClientError as e:
+        raise BControlCommunicationError(f"HTTP error during data retrieval: {e}")
+    except asyncio.TimeoutError:
+        raise BControlCommunicationError("Data request timed out")
+    except Exception as e:
+        raise BControlCommunicationError(f"Unexpected error during data retrieval: {e}")
 
 
 def translate_keys(data: dict, mapping: dict) -> dict:
     return {mapping.get(k, k): v for k, v in data.items()}
 
 class BControl:
-    def __init__(self, ip: str, password: str, session: aiohttp.ClientSession | None = None, timeout_seconds: int = 10):
+    def __init__(self, ip: str, password: str, session: Optional[aiohttp.ClientSession] = None, timeout_seconds: int = 10):
         self.base_url = f"http://{ip}"
         self.password = password
+        self._session_owner = session is None
         self.session = session or aiohttp.ClientSession()
         self.timeout = timeout_seconds
         self.cookie_value = None
         self.logged_in = False
         self.serial = None
         self.app_version = None
+        self._request_lock = asyncio.Lock()
 
     async def __aenter__(self):
         return self
@@ -98,7 +131,7 @@ class BControl:
         """
         try:
             cookies, text = await getcookie(self.session, self.base_url, self.timeout)
-            init_data = json.loads(text)
+            init_data = _decode_json(text, "start.php response")
             login_val = init_data.get("serial")
             if not login_val:
                 raise LoginValueError("Start response missing 'serial'.")
@@ -109,7 +142,7 @@ class BControl:
             self.cookie_value = phpsess.value
 
             auth_text = await authenticate(self.session, self.base_url, login_val, self.password, self.cookie_value, self.timeout)
-            auth = json.loads(auth_text)
+            auth = _decode_json(auth_text, "authentication response")
 
             # nur die benötigten Felder
             self.serial = auth.get("serial")
@@ -130,21 +163,32 @@ class BControl:
             raise
 
     async def get_data(self) -> dict:
-        if not self.logged_in:
-            _LOGGER.info("Session not valid, logging in first...")
-            await self.login()
+        async with self._request_lock:
+            if not self.logged_in:
+                _LOGGER.info("Session not valid, logging in first...")
+                await self.login()
 
-        raw = await getdata(self.session, self.base_url, self.cookie_value, self.timeout)
-        data = json.loads(raw)
-        if data.get("authentication") is False:
-            _LOGGER.warning("Session expired, re-login")
-            await self.login()
             raw = await getdata(self.session, self.base_url, self.cookie_value, self.timeout)
-            data = json.loads(raw)
+            data = _decode_json(raw, "data.php response")
+            if data.get("authentication") is False:
+                _LOGGER.warning("Session expired, re-login")
+                await self.login()
+                raw = await getdata(self.session, self.base_url, self.cookie_value, self.timeout)
+                data = _decode_json(raw, "data.php response after re-login")
 
-        return translate_keys(data, key_mapping)
+            return translate_keys(data, key_mapping)
+
+    async def async_get_data(self) -> dict:
+        """Home Assistant friendly alias for coordinator update methods."""
+        return await self.get_data()
+
+    async def async_test_connection(self) -> None:
+        """Validate connectivity and credentials for config flow checks."""
+        await self.login()
 
     async def close(self):
         """Close the underlying :class:`aiohttp.ClientSession` if owned."""
+        self.logged_in = False
+        self.cookie_value = None
         if self._session_owner:
             await self.session.close()

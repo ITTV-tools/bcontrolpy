@@ -10,15 +10,15 @@ async def main(ip, password):
         async with BControl(ip, password, session=session) as bc:
             login_response = await bc.login()
             print("Login Response:", login_response)
-        
-        try:
-            while True:
-                data = await bc.get_data()
-                formatted_data = format_data(data)
-                print(formatted_data)
-                await asyncio.sleep(5)  # Wait for 5 seconds before the next call
-        except asyncio.CancelledError:
-            print("Task cancelled, closing connection.")
+
+            try:
+                while True:
+                    data = await bc.async_get_data()
+                    formatted_data = format_data(data)
+                    print(formatted_data)
+                    await asyncio.sleep(5)  # Wait for 5 seconds before the next call
+            except asyncio.CancelledError:
+                print("Task cancelled, closing connection.")
 
 
 def format_data(data):

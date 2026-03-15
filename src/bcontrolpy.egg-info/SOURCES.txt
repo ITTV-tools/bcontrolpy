@@ -9,3 +9,4 @@ src/bcontrolpy.egg-info/SOURCES.txt
 src/bcontrolpy.egg-info/dependency_links.txt
 src/bcontrolpy.egg-info/requires.txt
 src/bcontrolpy.egg-info/top_level.txt
+tests/test_bcontrol.py

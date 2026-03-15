@@ -15,6 +15,7 @@
 * [Usage](#usage)
 
   * [Python API](#python-api)
+    * [Home Assistant Integration](#home-assistant-integration)
   * [Command Line Example](#command-line-example)
 * [Configuration](#configuration)
 * [License](#license)
@@ -62,6 +63,8 @@ asyncio.run(main())
 | -------------------- | ------------------------------------------------ | ------------------------------------------------------------------------------------ |
 | `login() -> dict`    | `{'serial', 'app_version', 'authentication'}`    | `AuthenticationError`, `CookieRetrievalError`, `LoginValueError`, `CookieValueError` |
 | `get_data() -> dict` | Measurement values mapped to human-readable keys | `NotAuthenticatedError`, HTTP errors                                                 |
+| `async_get_data() -> dict` | Alias of `get_data()` for coordinator usage | Same as `get_data()` |
+| `async_test_connection() -> None` | Validates credentials and connectivity | `AuthenticationError`, `BControlCommunicationError` |
 | `close() -> None`    |                                                  |                                                                                      |
 
 Example:
@@ -71,6 +74,49 @@ async with BControl(ip="192.168.1.100", password="your_password") as bc:
     info = await bc.login()
     values = await bc.get_data()
 ```
+
+### Home Assistant Integration
+
+`bcontrolpy` is designed to work with Home Assistant's `DataUpdateCoordinator` pattern.
+
+```python
+from datetime import timedelta
+from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+
+from bcontrolpy import AuthenticationError, BControl, BControlCommunicationError
+
+
+class BControlCoordinator(DataUpdateCoordinator):
+    def __init__(self, hass, entry):
+        super().__init__(
+            hass,
+            logger=LOGGER,
+            name="bcontrolpy",
+            update_interval=timedelta(seconds=30),
+            always_update=False,
+        )
+        self.client = BControl(
+            ip=entry.data["ip"],
+            password=entry.data["password"],
+            session=async_get_clientsession(hass),
+        )
+
+    async def _async_update_data(self):
+        try:
+            return await self.client.async_get_data()
+        except AuthenticationError as err:
+            raise ConfigEntryAuthFailed("Authentication failed") from err
+        except BControlCommunicationError as err:
+            raise UpdateFailed(f"Communication error: {err}") from err
+```
+
+This aligns with Home Assistant best practices:
+
+* Reuse Home Assistant's shared `aiohttp` session.
+* Poll through a single `DataUpdateCoordinator`.
+* Map auth errors to `ConfigEntryAuthFailed` and transport errors to `UpdateFailed`.
 
 ### Command Line Example
 
